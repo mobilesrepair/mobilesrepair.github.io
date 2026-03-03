@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>ZUUCASTER Professional Tracking</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+
+body{
+margin:0;
+font-family:Segoe UI;
+background:#f4f6f9 url("bg.png") no-repeat center top;
+background-size:cover;
+}
+
+.banner{
+height:160px;
+overflow:hidden;
+}
+.banner img{
+width:100%;
+height:100%;
+object-fit:cover;
+}
+
+.container{
+text-align:center;
+padding:30px;
+}
+
+.card{
+background:#fff;
+padding:20px;
+margin:20px auto;
+max-width:900px;
+border-radius:12px;
+box-shadow:0 8px 20px rgba(0,0,0,.08);
+text-align:left;
+}
+
+input,select{
+padding:10px;
+margin:5px;
+border-radius:6px;
+border:1px solid #ccc;
+}
+
+button{
+padding:8px 14px;
+background:#c40000;
+color:#fff;
+border:none;
+border-radius:6px;
+cursor:pointer;
+}
+
+/* STATUS DOT */
+.status-dot{
+position:relative;
+height:12px;
+width:12px;
+border-radius:50%;
+display:inline-block;
+margin-right:8px;
+}
+
+.status-dot::after{
+content:"";
+position:absolute;
+top:0;
+left:0;
+width:100%;
+height:100%;
+border-radius:50%;
+animation:ring 1.8s infinite;
+opacity:.6;
+}
+
+@keyframes ring{
+0%{transform:scale(1);opacity:.6}
+70%{transform:scale(2.5);opacity:0}
+100%{opacity:0}
+}
+
+.dot-Received{background:#2196f3}
+.dot-In\ Progress{background:#ff9800}
+.dot-Testing{background:#9c27b0}
+.dot-Shipping{background:#2ecc71}
+.dot-Completed{background:#9e9e9e}
+.dot-Completed::after{display:none}
+
+/* PROGRESS */
+.progress-container{
+background:#eee;
+border-radius:20px;
+height:14px;
+margin:15px 0;
+}
+
+.progress-bar{
+height:100%;
+background:linear-gradient(90deg,#c40000,#ff4d4d);
+}
+
+.progress-wrapper{
+position:relative;
+}
+
+.truck{
+position:absolute;
+top:-18px;
+left:-40px;
+font-size:20px;
+transition:left 1.2s ease;
+}
+
+/* VIDEO ADS */
+.ads-grid{
+display:grid;
+grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
+gap:15px;
+}
+.ads-grid video{
+width:100%;
+border-radius:12px;
+}
+
+#adminPanel,#adminDashboard{
+display:none;
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="banner">
+<img src="banner.png">
+</div>
+
+<div class="container">
+
+<h2>Repair Tracking Portal</h2>
+<div id="liveClock" style="margin-bottom:10px;color:#666"></div>
+
+<input id="caseSearch" placeholder="Enter Case Number">
+<button onclick="checkJob()">Check Status</button>
+
+<div id="result"></div>
+
+<div class="card">
+<h3>🔥 Promotions</h3>
+<div class="ads-grid">
+<video autoplay muted loop controls><source src="videos/ads1.mp4"></video>
+<video autoplay muted loop controls><source src="videos/ads2.mp4"></video>
+<video autoplay muted loop controls><source src="videos/ads3.mp4"></video>
+</div>
+</div>
+
+<p onclick="showAdmin()" style="cursor:pointer;text-decoration:underline;color:#666">
+Admin Login
+</p>
+
+<div id="adminPanel" class="card">
+<h3>Admin Panel</h3>
+
+<input id="caseNo" readonly placeholder="Case No"><br>
+<input id="model" placeholder="Model"><br>
+<input id="ownerPhone" placeholder="Owner Phone"><br>
+
+<select id="status">
+<option>Received</option>
+<option>In Progress</option>
+<option>Testing</option>
+<option>Shipping</option>
+<option>Completed</option>
+</select><br>
+
+<input id="tracking" placeholder="Tracking"><br>
+<input id="remark" placeholder="Remark"><br>
+<input id="price" type="number" step="0.01" placeholder="Repair Price (RM)"><br>
+
+<button onclick="saveJob()">Save / Update</button>
+
+</div>
+
+<div id="adminDashboard" class="card">
+<h3>Dashboard</h3>
+<table border="1" width="100%" cellpadding="5">
+<thead>
+<tr>
+<th>Case</th>
+<th>Status</th>
+<th>Updated</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody id="jobTable"></tbody>
+</table>
+</div>
+
+</div>
+
+<script>
+
+const API_URL="https://twilight-flower-ccc8.r3dvelvet92.workers.dev";
+const ADMIN_PASS="zuu123";
+
+let currentCase=null;
+let refreshInterval=null;
+
+/* LIVE CLOCK */
+setInterval(()=>{
+document.getElementById("liveClock").innerText=
+"Live: "+new Date().toLocaleString();
+},1000);
+
+/* ADMIN LOGIN */
+function showAdmin(){
+let p=prompt("Enter Password");
+if(p===ADMIN_PASS){
+document.getElementById("adminPanel").style.display="block";
+document.getElementById("adminDashboard").style.display="block";
+generateCaseNo();
+loadDashboard();
+}
+}
+
+/* AUTO CASE */
+async function generateCaseNo(){
+const res=await fetch(API_URL+"?action=newcase");
+const d=await res.json();
+document.getElementById("caseNo").value=d.caseNo;
+}
+
+/* SAVE JOB */
+async function saveJob(){
+
+const caseVal=document.getElementById("caseNo").value;
+const modelVal=document.getElementById("model").value;
+const phoneVal=document.getElementById("ownerPhone").value;
+const statusVal=document.getElementById("status").value;
+const trackingVal=document.getElementById("tracking").value;
+const remarkVal=document.getElementById("remark").value;
+const priceVal=document.getElementById("price").value;
+
+await fetch(API_URL,{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({
+caseNo:caseVal,
+model:modelVal,
+ownerPhone:phoneVal,
+status:statusVal,
+tracking:trackingVal,
+remark:remarkVal,
+price:priceVal
+})
+});
+
+/* AUTO WHATSAPP IF COMPLETED */
+if(statusVal==="Completed" && phoneVal){
+
+let phone=phoneVal.replace(/\D/g,"");
+if(phone.startsWith("0")) phone="6"+phone;
+
+const msg=encodeURIComponent(
+`Hi 👋
+
+Repair device anda telah SIAP ✅
+
+Case: ${caseVal}
+Model: ${modelVal}
+Total: RM ${Number(priceVal||0).toFixed(2)}
+
+Terima kasih menggunakan ZUUCASTER
+Untuk Dapatkan Receipt Sila Masukan No case di
+zuu.pages.dev 🙏`
+);
+
+window.open(`https://wa.me/${phone}?text=${msg}`,"_blank");
+}
+
+alert("Saved ✅");
+generateCaseNo();
+loadDashboard();
+}
+
+/* DASHBOARD */
+async function loadDashboard(){
+const res=await fetch(API_URL+"?action=list");
+const jobs=await res.json();
+
+let html="";
+jobs.forEach(j=>{
+html+=`
+<tr>
+<td>${j.caseNo}</td>
+<td><span class="status-dot dot-${j.status}"></span>${j.status}</td>
+<td>${j.updatedAt}</td>
+<td>
+<button onclick="editJob('${j.caseNo}')">Edit</button>
+<button onclick="deleteJob('${j.caseNo}')">Delete</button>
+</td>
+</tr>`;
+});
+document.getElementById("jobTable").innerHTML=html;
+}
+
+async function editJob(c){
+const res=await fetch(API_URL+"?case="+c);
+const d=await res.json();
+
+document.getElementById("caseNo").value=d.caseNo;
+document.getElementById("model").value=d.model;
+document.getElementById("ownerPhone").value=d.ownerPhone;
+document.getElementById("status").value=d.status;
+document.getElementById("tracking").value=d.tracking;
+document.getElementById("remark").value=d.remark;
+document.getElementById("price").value=d.price||0;
+}
+
+async function deleteJob(c){
+if(!confirm("Delete?"))return;
+await fetch(API_URL+"?case="+c,{method:"DELETE"});
+loadDashboard();
+}
+
+/* CUSTOMER VIEW */
+async function checkJob(){
+
+const c=document.getElementById("caseSearch").value;
+currentCase=c;
+
+const res=await fetch(API_URL+"?case="+c+"&t="+Date.now());
+const d=await res.json();
+
+if(d.error){
+document.getElementById("result").innerHTML=
+"<div class='card'>Case not found</div>";
+return;
+}
+
+let steps=["Received","In Progress","Testing","Shipping","Completed"];
+let percent=((steps.indexOf(d.status)+1)/steps.length)*100;
+
+document.getElementById("result").innerHTML=`
+<div class="card">
+
+<h3>${d.model}</h3>
+
+<p>
+<span class="status-dot dot-${d.status}"></span>
+<b>${d.status}</b>
+</p>
+
+<div class="progress-wrapper">
+<div class="progress-container">
+<div class="progress-bar" style="width:${percent}%"></div>
+</div>
+${d.status==="Shipping" ? '<div class="truck" id="truck">🚚</div>' : ""}
+</div>
+
+<p><b>Last Update:</b> ${d.updatedAt}</p>
+<p><b>Price:</b> RM ${Number(d.price||0).toFixed(2)}</p>
+
+<p>🙏 Thank you for trusting ZUUCASTER IT SOLUTIONS.</p>
+
+<button onclick="previewReceipt('${d.caseNo}')">🧾 Receipt</button>
+
+</div>
+`;
+
+if(d.status==="Shipping"){
+setTimeout(()=>{
+const t=document.getElementById("truck");
+if(t) t.style.left=percent+"%";
+},100);
+}
+
+/* AUTO REFRESH */
+clearInterval(refreshInterval);
+refreshInterval=setInterval(()=>checkJob(),5000);
+
+}
+
+/* RECEIPT */
+async function previewReceipt(caseNo){
+
+const res=await fetch(API_URL+"?case="+caseNo);
+const d=await res.json();
+
+const w=window.open("");
+
+w.document.write(`
+<html>
+<head>
+<style>
+body{font-family:Arial;padding:40px}
+.header{display:flex;justify-content:space-between}
+.company{font-size:13px;line-height:1.6;text-align:right}
+.logo{height:70px}
+table{width:100%;border-collapse:collapse;margin-top:20px}
+td{padding:10px;border-bottom:1px solid #ccc}
+.btn{margin-top:20px;padding:10px 18px;background:#c40000;color:#fff;border:none}
+</style>
+</head>
+<body>
+
+<div class="header">
+<img src="logo.png" class="logo">
+<div class="company">
+<b>ZUU CASTER IT SOLUTIONS</b><br>
+REG BUSINESS: 202403321609 (KT0581205-T)<br><br>
+THANK YOU FOR BUSINESS<br>
+THANK YOU FOR YOUR TRUST<br>
+SEE YOU AGAIN
+</div>
+</div>
+
+<h2>SERVICE RECEIPT</h2>
+
+<table>
+<tr><td><b>Case</b></td><td>${d.caseNo}</td></tr>
+<tr><td><b>Model</b></td><td>${d.model}</td></tr>
+<tr><td><b>Status</b></td><td>${d.status}</td></tr>
+<tr><td><b>Last Update</b></td><td>${d.updatedAt}</td></tr>
+<tr><td><b>Total</b></td><td><b>RM ${Number(d.price||0).toFixed(2)}</b></td></tr>
+</table>
+
+<button class="btn" onclick="window.print()">Print / Save PDF</button>
+
+</body>
+</html>
+`);
+}
+
+</script>
+
+</body>
+</html>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ZUUCASTER | Advanced Mobile Repair</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+:root{
+  --soft:#f6f8fb;
+  --text:#1a1a1a;
+  --muted:#5f6368;
+  --border:#e0e3e7;
+  --red:#d40000;
+  --hot:#ff3b3b;
+  --tech:#00a3c4;
+}
+
+*{margin:0;padding:0;box-sizing:border-box;}
+
+body{
+  font-family:Segoe UI,Inter,sans-serif;
+  color:var(--text);
+  background:url("background.png") no-repeat center center fixed;
+  background-size:cover;
+}
+
+body::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  background:rgba(255,255,255,0.92);
+  z-index:-1;
+}
+
+/* HEADER */
+header{
+  padding:18px 40px;
+  border-bottom:1px solid var(--border);
+}
+.brand{display:flex;align-items:center;gap:12px;}
+.brand img{height:36px;}
+.brand .zuu{font-weight:800;color:#000;}
+.brand .caster{font-weight:800;color:var(--red);}
+
+/* HERO */
+.hero{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:90px 8%;
+}
+.hero-text{max-width:520px;}
+.hero-text h2{font-size:42px;margin-bottom:20px;}
+.hero-text p{font-size:17px;color:var(--muted);line-height:1.6;}
+
+.board-wrap{
+  width:420px;
+}
+.board{
+  width:100%;
+  animation:float 6s ease-in-out infinite;
+}
+@keyframes float{
+  50%{transform:translateY(-18px);}
+}
+
+/* Scroll Animation */
+.scroll-scale{
+  transform:scale(.85);
+  opacity:0;
+  transition:transform 1.1s cubic-bezier(.19,1,.22,1),
+             opacity 1.1s ease;
+}
+.scroll-scale.active{
+  transform:scale(1);
+  opacity:1;
+}
+
+/* HOT ITEM */
+.section{padding:80px 8%;}
+.hot-title{color:var(--hot);font-size:28px;margin-bottom:30px;}
+.cards{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+  gap:25px;
+}
+.card{
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:26px;
+  background:#fff;
+  text-decoration:none;
+  color:inherit;
+  transition:.3s;
+}
+.card:hover{
+  transform:translateY(-8px);
+  border-color:var(--hot);
+}
+.badge-hot{
+  background:var(--hot);
+  color:#fff;
+  font-size:12px;
+  padding:4px 10px;
+  border-radius:20px;
+  display:inline-block;
+  margin-bottom:8px;
+}
+
+/* EMMC STATIC ANIMATION */
+.emmc-section{
+  padding:90px 8%;
+  text-align:center;
+}
+.illusion-wrapper{
+  display:flex;
+  justify-content:center;
+  margin:50px 0;
+}
+.illusion-3d{
+  width:360px;
+  max-width:90%;
+  border-radius:18px;
+  animation:
+    floatStatic 6s ease-in-out infinite,
+    glowPulse 4s ease-in-out infinite;
+}
+@keyframes floatStatic{
+  0%{transform:translateY(0px);}
+  50%{transform:translateY(-15px);}
+  100%{transform:translateY(0px);}
+}
+@keyframes glowPulse{
+  0%{box-shadow:0 40px 120px rgba(0,163,196,.25);}
+  50%{box-shadow:0 50px 160px rgba(0,163,196,.55);}
+  100%{box-shadow:0 40px 120px rgba(0,163,196,.25);}
+}
+
+.emmc-desc{
+  max-width:520px;
+  margin:0 auto;
+  font-size:16px;
+  color:var(--muted);
+}
+
+/* VIDEO */
+.video-section{
+  padding:60px 8%;
+  background:#0f172a;
+}
+.video-grid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:24px;
+  max-width:720px;
+  margin:auto;
+}
+.video-box{
+  aspect-ratio:9/16;
+  border-radius:14px;
+  overflow:hidden;
+}
+.video-box video{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+}
+
+/* WHY WITH US */
+.why-section{
+  padding:90px 8%;
+  background:#ffffff;
+  text-align:center;
+}
+.why-section h2{
+  font-size:32px;
+  margin-bottom:50px;
+}
+.why-grid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:30px;
+}
+.why-card{
+  background:#fff;
+  padding:30px;
+  border-radius:16px;
+  border:1px solid var(--border);
+  transition:.3s;
+}
+.why-card:hover{
+  transform:translateY(-10px);
+  box-shadow:0 20px 60px rgba(0,0,0,0.08);
+}
+.why-card h3{
+  margin-bottom:15px;
+  font-size:18px;
+}
+.why-card p{
+  font-size:15px;
+  color:var(--muted);
+  line-height:1.6;
+}
+
+@media(max-width:900px){
+  .hero{flex-direction:column;text-align:center;}
+  .video-grid{grid-template-columns:1fr;}
+  .why-grid{grid-template-columns:1fr;}
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <div class="brand">
+    <img src="logo.png">
+    <span class="zuu">ZUU</span><span class="caster">CASTER</span>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="hero-text">
+    <h2 class="scroll-scale">Advanced Mobile Repair Solutions</h2>
+    <p class="scroll-scale">
+      Through professional diagnostic tools, secure firmware authentication 
+      protocols, and precision EMMC/UFS storage-level analysis, we deliver 
+      advanced unlocking and system recovery solutions while preserving 
+      device integrity, firmware stability, and data security.
+    </p>
+  </div>
+  <div class="board-wrap">
+    <img src="board.png" class="board">
+  </div>
+</section>
+
+<section class="section">
+  <h2 class="hot-title scroll-scale">🔥 HOT ITEM SERVICES</h2>
+  <div class="cards">
+    <a class="card" target="_blank" href="https://wa.me/60178040403?text=UNLOCK%20TELCO"><span class="badge-hot">HOT</span><h3>📶 UNLOCK TELCO</h3></a>
+    <a class="card" target="_blank" href="https://wa.me/60178040403?text=UNLOCK%20HUAWEI%20ID"><span class="badge-hot">HOT</span><h3>🔐 UNLOCK HUAWEI ID</h3></a>
+    <a class="card" target="_blank" href="https://wa.me/60178040403?text=UNLOCK%20XIAOMI%20ACCOUNT"><span class="badge-hot">HOT</span><h3>📱 UNLOCK XIAOMI ACCOUNT</h3></a>
+    <a class="card" target="_blank" href="https://wa.me/60178040403?text=UNLOCK%20GOOGLE%20LOCK"><span class="badge-hot">HOT</span><h3>🔓 UNLOCK GOOGLE LOCK</h3></a>
+    <a class="card" target="_blank" href="https://wa.me/60178040403?text=UNLOCK%20BOOTLOADER"><span class="badge-hot">HOT</span><h3>⚙️ UNLOCK BOOTLOADER</h3></a>
+  </div>
+</section>
+
+<section class="emmc-section">
+  <h2 class="scroll-scale">Advanced EMMC / UFS Diagnostics</h2>
+  <div class="illusion-wrapper">
+    <img src="emmc-ufs-hologram.png" class="illusion-3d">
+  </div>
+  <p class="emmc-desc scroll-scale">
+    High-precision storage analysis for modern mobile devices.
+  </p>
+</section>
+
+<section class="video-section">
+  <div class="video-grid">
+    <div class="video-box"><video src="video1.mp4" autoplay muted loop></video></div>
+    <div class="video-box"><video src="video2.mp4" autoplay muted loop></video></div>
+    <div class="video-box"><video src="video3.mp4" autoplay muted loop></video></div>
+  </div>
+</section>
+
+<section class="why-section">
+  <h2 class="scroll-scale">Why Choose ZUUCASTER</h2>
+  <div class="why-grid">
+
+    <div class="why-card scroll-scale">
+      <h3>✔ Verified & Trusted Network</h3>
+      <p>
+        Verified with regional dealers and trusted service networks,
+        ensuring reliable and secure unlocking solutions.
+      </p>
+    </div>
+
+    <div class="why-card scroll-scale">
+      <h3>✔ 6-Month Software Warranty</h3>
+      <p>
+        We provide up to 6 months warranty coverage for software-related services,
+        giving clients peace of mind and post-service assurance.
+      </p>
+    </div>
+
+    <div class="why-card scroll-scale">
+      <h3>✔ Proven Experience & Success Rate</h3>
+      <p>
+        With experience handling nearly 400 devices and maintaining
+        an average success rate of 90%, we deliver consistent and dependable results.
+      </p>
+    </div>
+
+  </div>
+</section>
+
+<script>
+const obs=new IntersectionObserver(e=>{
+  e.forEach(i=>{
+    if(i.isIntersecting)i.target.classList.add('active');
+  });
+},{threshold:.35});
+document.querySelectorAll('.scroll-scale').forEach(el=>obs.observe(el));
+</script>
+
+<!-- SUPPORT MODEL SECTION -->
+<section class="support-section" id="support" style="padding:90px 8%; background:var(--soft);">
+
+  <h2 class="scroll-scale" style="font-size:32px; margin-bottom:15px;">Supported Models</h2>
+  <p class="support-note" style="font-size:14px; color:var(--muted); margin-bottom:40px;">
+    *Click any model below to directly contact us via WhatsApp.
+  </p>
+
+  <!-- REALME -->
+  <div class="brand-group">
+    <h3 style="margin-bottom:15px;">REALME</h3>
+    <div class="model-grid">
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Realme 11">Realme 11</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Realme 11x">Realme 11x</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Realme 12 5G">Realme 12 5G</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Realme 12X 5G">Realme 12X 5G</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Realme 13 5G">Realme 13 5G</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Realme Note 60">Realme Note 60</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Realme Note 50">Realme Note 50</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Realme C53">Realme C53</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Realme C65">Realme C65</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Realme C75">Realme C75</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Realme C55">Realme C55</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Realme 12 Pro">Realme 12 Pro</a>
+    </div>
+  </div>
+
+  <!-- OPPO -->
+  <div class="brand-group">
+    <h3 style="margin-bottom:15px;">OPPO</h3>
+    <div class="model-grid">
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo A16">Oppo A16</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo A17">Oppo A17</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo A18">Oppo A18</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo A77">Oppo A77</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo A17K">Oppo A17K</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo A53">Oppo A53</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo A57">Oppo A57</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo A38">Oppo A38</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo A54">Oppo A54</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo A3Pro">Oppo A3Pro</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo A5pro">Oppo A5pro</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo A5 5G">Oppo A5 5G</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo A6Pro 5G">Oppo A6Pro 5G</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo A3x">Oppo A3x</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo 6T">Oppo 6T</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo Reno 7">Oppo Reno 7</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo Reno 10">Oppo Reno 10</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo Reno 11">Oppo Reno 11</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo Reno 10 Pro Plus">Oppo Reno 10 Pro Plus</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo Reno 11F">Oppo Reno 11F</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo Reno 12F">Oppo Reno 12F</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo Reno 13F">Oppo Reno 13F</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo Reno 14 Pro">Oppo Reno 14 Pro</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Oppo Reno 14">Oppo Reno 14</a>
+    </div>
+  </div>
+
+  <!-- REDMI -->
+  <div class="brand-group">
+    <h3 style="margin-bottom:15px;">REDMI</h3>
+    <div class="model-grid">
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Redmi Note 12 5G">Redmi Note 12 5G</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Redmi Note 13 5G">Redmi Note 13 5G</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Redmi Note 14 5G">Redmi Note 14 5G</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Redmi 14pro plus">Redmi 14pro plus</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Redmi 15C">Redmi 15C</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Redmi 14C">Redmi 14C</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Redmi 13C">Redmi 13C</a>
+    </div>
+  </div>
+
+  <!-- HONOR -->
+  <div class="brand-group">
+    <h3 style="margin-bottom:15px;">HONOR</h3>
+    <div class="model-grid">
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Honor X9C">Honor X9C</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Honor X9D">Honor X9D</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Honor Smart 200">Honor Smart 200</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Honor Smart 400">Honor Smart 400</a>
+      <a class="model-btn" target="_blank" href="https://wa.me/60178040403?text=Honor 400Lite">Honor 400Lite</a>
+    </div>
+  </div>
+
+</section>
+</body>
+</html>
